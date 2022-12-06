@@ -26,7 +26,7 @@ if [ ! -d "pugixml-1.12.1" ]; then
     tar -xf pugixml-1.12.1.tar.gz
     rm pugixml-1.12.1.tar.gz
 fi
-pushd pugixml-1.12.1
+pushd pugixml-1.12
 mkdir -p build
 cd build
 cmake ..
@@ -81,12 +81,12 @@ popd
 
 # installing WRENCH 2.0:
 echo "Installing WRENCH..."
-if [ ! -d "wrench-v2.1"]; then
+if [ ! -d "wrench-v2.1" ]; then
     wget https://github.com/wrench-project/wrench/archive/refs/tags/v2.1.tar.gz
-    tar -xf v2.1.tar.gz -C wrench-v2.1
+    tar -xf v2.1.tar.gz
     rm v2.1.tar.gz
 fi
-pushd wrench-v2.1
+pushd wrench-2.1
 mkdir -p build
 cd build
 cmake ..
