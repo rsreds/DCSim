@@ -41,8 +41,8 @@ const std::vector<std::string> workload_keys = {
         "num_jobs","infiles_per_job",
         "average_flops","sigma_flops",
         "average_memory", "sigma_memory",
-        "average_infile_size", "sigma_infile_size",
         "average_outfile_size", "sigma_outfile_size",
+        "infile_dataset",
         "workload_type", "submission_time"
     };
 std::map<std::shared_ptr<wrench::StorageService>, LRU_FileList> SimpleSimulator::global_file_map;
@@ -441,6 +441,31 @@ void SimpleSimulator::fillHostsInSiblingZonesMap(bool include_subzones = false) 
     }
 }
 
+void assignFiles(std::vector<Workload> &workload_specs, std::vector<Dataset> const &dataset_specs)
+{
+    for (auto &ws : workload_specs)
+    {
+        auto ds_it = std::find_if(dataset_specs.begin(), dataset_specs.end(), [&](Dataset ds)
+                                  { return ds.name == ws.infile_dataset; });
+        if (ds_it == dataset_specs.end())
+            throw std::runtime_error("ERROR: no valid infile dataset name in workload configuration");
+        auto ds = *ds_it;
+        int num_jobs = ws.job_batch.size();
+        int num_files = ds.files.size();
+        int k = num_files / num_jobs;
+        std::cerr << "Assigning " << num_files << " files to "<< num_jobs << " jobs\n";
+        for (auto j = 0; j < num_jobs; ++j)
+        {
+            auto beg_it = ds.files.begin() + j * k;
+            if (std::distance(beg_it, ds.files.end()) < k)
+                {
+                    std::copy(beg_it, ds.files.end(), std::back_inserter(ws.job_batch[j].infiles));
+                    break;
+                }
+            std::copy_n(beg_it, k, std::back_inserter(ws.job_batch[j].infiles));
+        }
+    }
+}
 
 int main(int argc, char **argv) {
 
@@ -563,10 +588,9 @@ int main(int argc, char **argv) {
                 num_jobs, infiles_per_job,
                 average_flops, sigma_flops,
                 average_memory,sigma_memory,
-                average_infile_size, sigma_infile_size,
                 average_outfile_size, sigma_outfile_size,
                 vm["workload-type"].as<WorkloadTypeStruct>().get(), "",
-                submission_arrival_time,
+                "", submission_arrival_time,
                 SimpleSimulator::gen
             )
         );
@@ -599,9 +623,9 @@ int main(int argc, char **argv) {
                         wf.value()["num_jobs"], wf.value()["infiles_per_job"],
                         wf.value()["average_flops"], wf.value()["sigma_flops"],
                         wf.value()["average_memory"], wf.value()["sigma_memory"],
-                        wf.value()["average_infile_size"], wf.value()["sigma_infile_size"],
                         wf.value()["average_outfile_size"], wf.value()["sigma_outfile_size"],
                         get_workload_type(workload_type_lower), wf.key(),
+                        wf.value()["infile_dataset"],
                         wf.value()["submission_time"],
                         SimpleSimulator::gen
                     )
@@ -611,6 +635,9 @@ int main(int argc, char **argv) {
         }
     }
     std::cerr << "Created " << workload_specs.size() << " unique workloads!" << "\n";
+
+    /* Add infiles to worklaod */
+    assignFiles(workload_specs, dataset_specs);
 
     /* Read and parse the platform description file to instantiate a simulation platform */
     std::cerr << "Instantiating SimGrid platform..." << std::endl;
