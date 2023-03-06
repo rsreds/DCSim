@@ -69,23 +69,12 @@ class Workload {
             const size_t infiles_per_job,
             nlohmann::json flops,
             nlohmann::json memory,
-            nlohmann::json infile_size,
             nlohmann::json outfile_size,
             const WorkloadType workload_type, const std::string name_suffix,
             const std::string infile_dataset, const double arrival_time,
             const std::mt19937& generator
         );
 
-        Workload(
-            const size_t num_jobs,
-            const size_t infiles_per_job,
-            nlohmann::json flops,
-            nlohmann::json memory,
-            nlohmann::json outfile_size,
-            const WorkloadType workload_type, const std::string name_suffix,
-            const std::string infile_dataset, const double arrival_time,
-            const std::mt19937& generator
-        );
 
         // job list with specifications
         std::vector<JobSpecification> job_batch;
@@ -101,7 +90,6 @@ class Workload {
         std::mt19937 generator;
         std::function<double(std::mt19937&)> flops_dist;
         std::function<double(std::mt19937&)> mem_dist;
-        std::function<double(std::mt19937&)> insize_dist;
         std::function<double(std::mt19937&)> outsize_dist;
 
         std::function<double(std::mt19937&)> initializeRNG(nlohmann::json json);
