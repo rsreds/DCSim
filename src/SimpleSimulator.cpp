@@ -37,11 +37,14 @@ const std::vector<std::string> dataset_keys = {
         "location", "num_files",
         "filesize"
     };
-const std::vector<std::string> workload_keys = {
-        "num_jobs","infiles_per_job",
+const std::vector<std::string> mandatory_workload_keys = {
+        "num_jobs",
         "flops", "memory", "outfilesize",
-        "infile_dataset",
         "workload_type", "submission_time"
+    };
+const std::vector<std::string> elective_workload_keys = {
+        "infiles_per_job",
+        "infile_dataset",
     };
 std::map<std::shared_ptr<wrench::StorageService>, LRU_FileList> SimpleSimulator::global_file_map;
 std::mt19937 SimpleSimulator::gen(42);  // random number generator
@@ -580,7 +583,7 @@ int main(int argc, char **argv) {
             for (auto &wf: wfs_json.items()){
 
                 // Checking json syntax to match workload spec
-                for (auto &wf_key : workload_keys){
+                for (auto &wf_key : mandatory_workload_keys){
                     try {
                         if(!wf.value().contains(wf_key)){
                             throw std::invalid_argument("ERROR: the workload configuration " + wf_confpath + " must contain " + wf_key + " as information.");
@@ -592,17 +595,29 @@ int main(int argc, char **argv) {
                     }
                 }
                 std::string workload_type_lower = boost::to_lower_copy(std::string(wf.value()["workload_type"]));
-                workload_specs.push_back(
-                    Workload(
-                        wf.value()["num_jobs"], wf.value()["infiles_per_job"],
-                        wf.value()["flops"], wf.value()["memory"],
-                        wf.value()["outfilesize"],
-                        get_workload_type(workload_type_lower), wf.key(),
-                        wf.value()["infile_dataset"],
-                        wf.value()["submission_time"],
-                        SimpleSimulator::gen
-                    )
-                );
+                if (workload_type_lower != "calculation")
+                {
+                    workload_specs.push_back(
+                        Workload(
+                            wf.value()["num_jobs"], wf.value()["infiles_per_job"],
+                            wf.value()["flops"], wf.value()["memory"],
+                            wf.value()["outfilesize"],
+                            get_workload_type(workload_type_lower), wf.key(),
+                            wf.value()["infile_dataset"],
+                            wf.value()["submission_time"],
+                            SimpleSimulator::gen));
+                }
+                else
+                {
+                    workload_specs.push_back(
+                        Workload(
+                            wf.value()["num_jobs"],
+                            wf.value()["flops"], wf.value()["memory"],
+                            wf.value()["outfilesize"],
+                            get_workload_type(workload_type_lower), wf.key(),
+                            wf.value()["submission_time"],
+                            SimpleSimulator::gen));
+                }
                 std::cerr << "\tThe workload " << std::string(wf.key()) << " has " << wf.value()["num_jobs"] << " unique jobs" << std::endl;
             }
         }
@@ -613,6 +628,8 @@ int main(int argc, char **argv) {
 
     for (auto &ws : workload_specs)
     {
+        if (ws.workload_type == WorkloadType::Calculation)
+            continue;
         ws.assignFiles(dataset_specs);
     }
 
