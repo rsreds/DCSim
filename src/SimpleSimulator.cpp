@@ -44,7 +44,7 @@ const std::vector<std::string> mandatory_workload_keys = {
     };
 const std::vector<std::string> elective_workload_keys = {
         "infiles_per_job",
-        "infile_dataset",
+        "infile_datasets",
     };
 std::map<std::shared_ptr<wrench::StorageService>, LRU_FileList> SimpleSimulator::global_file_map;
 std::mt19937 SimpleSimulator::gen(42);  // random number generator
@@ -536,10 +536,15 @@ int main(int argc, char **argv) {
                         exit(EXIT_FAILURE);
                     }
                 }
+                std::vector<std::string> location{};
+                if (ds.value()["location"].type() == nlohmann::json::value_t::string)
+                    location = {ds.value()["location"]};
+                else
+                    location = ds.value()["location"].get<std::vector<std::string>>();
                 dataset_specs.push_back(
                     Dataset(
                         // TODO: support simple strings when only one host is required as location
-                        ds.value()["location"].get<std::vector<std::string>>(),
+                        location,
                         ds.value()["num_files"],
                         ds.value()["filesize"],
                         ds.key(),
@@ -566,7 +571,7 @@ int main(int argc, char **argv) {
                 average_memory,sigma_memory,
                 average_outfile_size, sigma_outfile_size,
                 vm["workload-type"].as<WorkloadTypeStruct>().get(), "",
-                "", submission_arrival_time,
+                {""}, submission_arrival_time,
                 SimpleSimulator::gen
             )
         );
@@ -581,7 +586,6 @@ int main(int argc, char **argv) {
 
             // Looping over the multiple workloads configured in the json file
             for (auto &wf: wfs_json.items()){
-
                 // Checking json syntax to match workload spec
                 for (auto &wf_key : mandatory_workload_keys){
                     try {
@@ -597,6 +601,11 @@ int main(int argc, char **argv) {
                 std::string workload_type_lower = boost::to_lower_copy(std::string(wf.value()["workload_type"]));
                 if (workload_type_lower != "calculation")
                 {
+                    std::vector<std::string> infile_datasets{};
+                    if (wf.value()["infile_datasets"].type() == nlohmann::json::value_t::string)
+                        infile_datasets = {wf.value()["infile_datasets"]};
+                    else
+                        infile_datasets = wf.value()["infile_datasets"].get<std::vector<std::string>>();
                     workload_specs.push_back(
                         Workload(
                             wf.value()["num_jobs"], wf.value()["infiles_per_job"],
@@ -765,40 +774,50 @@ int main(int argc, char **argv) {
     }
 
     /* Instantiate inputfiles and set outfile destinations*/
-    std::cerr << "Creating and staging input files plus set destination of output files..." << std::endl;
+    std::cerr << "Creating and staging input files" << std::endl;
+    try {
+        for (auto dss : dataset_specs)
+        {
+            std::shuffle(dss.files.begin(), dss.files.end(), SimpleSimulator::gen);
+            //TODO: Add total_file_size as dataset property
+            double incr_infile_size = 0.;
+            for (auto const &f : dss.files) {
+                incr_infile_size += f->getSize();
+            }
+            double cached_files_size = 0.;
+            for (auto const &f : dss.files) {
+                // Distribute the dataset files on specified GRID storages
+                //TODO: Think of a more realistic distribution pattern and avoid duplications
+                for (auto storage_service: grid_storage_services) {
+                    if (std::find(dss.hostnames.begin(), dss.hostnames.end(), storage_service->getHostname()) == dss.hostnames.end() )
+                        continue;
+                    simulation->stageFile(wrench::FileLocation::LOCATION(storage_service, f));
+                    SimpleSimulator::global_file_map[storage_service].touchFile(f.get());
+                }
+                // Distribute the files on all caches until desired hitrate is reached
+                //TODO: Rework the initialization of input files on caches
+                if (cached_files_size < hitrate*incr_infile_size) {
+                    for (const auto& cache : cache_storage_services) {
+                        // simulation->stageFile(f, cache);
+                        simulation->stageFile(wrench::FileLocation::LOCATION(cache, f));
+                        SimpleSimulator::global_file_map[cache].touchFile(f.get());
+                    }
+                    cached_files_size += f->getSize();
+                }
+            }
+            if (cached_files_size/incr_infile_size < hitrate) {
+                throw std::runtime_error("Desired hitrate was not reached!");
+            }
+          
+        }
+    } catch (std::runtime_error &e) {
+        std::cerr << "Exception: " << e.what() << std::endl;
+        return 0;
+    }
+    std::cerr << "Set destination of output files..." << std::endl;
     for (auto wms: workload_execution_controllers) {
         try {
             for (auto &job_spec: wms->get_workload_spec()) {
-                std::shuffle(job_spec.second.infiles.begin(), job_spec.second.infiles.end(), SimpleSimulator::gen); // Shuffle the input files
-                // Compute the job's incremental inputfiles size
-                double incr_inputfile_size = 0.;
-                for (auto const &f : job_spec.second.infiles) {
-                    incr_inputfile_size += f->getSize();
-                }
-                double cached_files_size = 0.;
-                for (auto const &f : job_spec.second.infiles) {
-                    // Distribute the inputfiles on all GRID storages
-                    //TODO: Think of a more realistic distribution pattern and avoid duplications
-                    for (auto storage_service: grid_storage_services) {
-                        // simulation->stageFile(f, storage_service);
-                        simulation->stageFile(wrench::FileLocation::LOCATION(storage_service, f));
-                        SimpleSimulator::global_file_map[storage_service].touchFile(f.get());
-                    }
-                    // Distribute the infiles on all caches until desired hitrate is reached
-                    //TODO: Rework the initialization of input files on caches
-                    if (cached_files_size < hitrate*incr_inputfile_size) {
-                        for (const auto& cache : cache_storage_services) {
-                            // simulation->stageFile(f, cache);
-                            simulation->stageFile(wrench::FileLocation::LOCATION(cache, f));
-                            SimpleSimulator::global_file_map[cache].touchFile(f.get());
-                        }
-                        cached_files_size += f->getSize();
-                    }
-                }
-                if (cached_files_size/incr_inputfile_size < hitrate) {
-                    throw std::runtime_error("Desired hitrate was not reached!");
-                }
-
                 // Set outfile destinations
                 // TODO: Think of a way to identify a specific (GRID) storage
                 for (auto storage_service: grid_storage_services) {
