@@ -158,6 +158,31 @@ JobSpecification Workload::sampleJob(size_t job_id, std::string name_suffix, std
     return job_specification;
 }
 
+/**
+ * @brief Transforms elements from a range and copies the transformed elements to a new range,
+ *        only if they satisfy a specified condition.
+ * 
+ * The `transform_if` function applies a transformation function to elements in the range `[first, last)`,
+ * and copies the results to the range starting at `dest`, but only if the corresponding elements satisfy
+ * the predicate `pred`. If the predicate returns true for an element, the transformation function `transform`
+ * is applied to that element, and the result is copied to the output range.
+ * 
+ * @tparam InputIt    The type of the input iterator representing the input range.
+ * @tparam OutputIt   The type of the output iterator representing the output range.
+ * @tparam Pred       The type of the predicate function that should take an element from the input range
+ *                    as an argument and return a bool value indicating whether the element satisfies the condition.
+ * @tparam Fct        The type of the transformation function that should take an element from the input range
+ *                    as an argument and return the transformed element.
+ * 
+ * @param first       Input iterator to the beginning of the input range.
+ * @param last        Input iterator to the end of the input range.
+ * @param dest        Output iterator pointing to the beginning of the output range where transformed elements
+ *                    will be copied.
+ * @param pred        Predicate function that should take an element from the input range as an argument and
+ *                    return true if the element satisfies the condition to be transformed and copied, false otherwise.
+ * @param transform   Transformation function that should take an element from the input range as an argument
+ *                    and return the transformed element to be copied to the output range.
+ */
 template <class InputIt, class OutputIt, class Pred, class Fct>
 void transform_if(InputIt first, InputIt last, OutputIt dest, Pred pred, Fct transform)
 {
@@ -169,6 +194,20 @@ void transform_if(InputIt first, InputIt last, OutputIt dest, Pred pred, Fct tra
    }
 }
 
+/**
+ * @brief Assigns files from the provided dataset to the corresponding jobs in the workload.
+ * 
+ * This function takes a vector of dataset specifications and matches them with the existing infile_datasets
+ * in the workload. It then distributes the files from these datasets to the jobs in the job_batch. The number
+ * of files assigned to each job is roughly equal, as far as possible.
+ *
+ * @param dataset_specs A constant reference to a vector containing dataset specifications.
+ *                      Dataset specifications are objects of the Dataset class, which contain information
+ *                      about the dataset, including its name and files.
+ * 
+ * @throws std::runtime_error If there is no valid infile dataset name in the workload configuration.
+ *                            In this case, the function cannot proceed with the assignment.
+ */
 void Workload::assignFiles(std::vector<Dataset> const &dataset_specs)
 {
     std::vector<Dataset const *> matching_ds{};
@@ -176,7 +215,8 @@ void Workload::assignFiles(std::vector<Dataset> const &dataset_specs)
         dataset_specs.begin(), dataset_specs.end(), std::back_inserter(matching_ds), [&](Dataset const& ds)
         { return std::find(infile_datasets.begin(), infile_datasets.end(), ds.name) != infile_datasets.end(); },
         [&](Dataset const& ds)
-        { return &ds; });
+        { return &ds; }); //copies pointers to Dataset objects if their names are present in the infile_datasets container.
+        // std::copy_if makes a hard copy of the vector, and std::transform allows to copy the pointer but does not support a predicate function. 
     if (matching_ds.empty())
         throw std::runtime_error("ERROR: no valid infile dataset name in workload configuration.");
     int num_files = std::accumulate(matching_ds.begin(), matching_ds.end(), 0, [](int sum, Dataset const* ds)

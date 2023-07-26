@@ -43,7 +43,6 @@ const std::vector<std::string> mandatory_workload_keys = {
         "workload_type", "submission_time"
     };
 const std::vector<std::string> elective_workload_keys = {
-        "infiles_per_job",
         "infile_dataset",
     };
 std::map<std::shared_ptr<wrench::StorageService>, LRU_FileList> SimpleSimulator::global_file_map;
@@ -485,8 +484,9 @@ int main(int argc, char **argv) {
 
     std::vector<Dataset> dataset_specs = {};
 
-    if(dataset_configurations.size() ==0){
-        //Default dataset config
+    if (dataset_configurations.size() == 0)
+    {
+        // TODO: Default dataset config
     }
     else {
         for(auto &ds_confpath : dataset_configurations){
